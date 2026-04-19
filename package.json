@@ -1,0 +1,19 @@
+{
+  "name": "asasvirtuais-dexie",
+  "version": "1.0.0",
+  "main": "./index.ts",
+  "exports": {
+    ".": "./index.ts",
+    "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "asasvirtuais": "^4.0.1",
+    "dexie": "^4.4.2"
+  },
+  "peerDependencies": {
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "zod": "^4.3.6"
+  }
+}
