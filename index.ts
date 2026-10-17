@@ -1,6 +1,35 @@
 import { z } from 'zod'
 import Dexie from 'dexie'
-import type { DatabaseSchema, TableInterface } from 'asasvirtuais/interface'
+import type { DatabaseSchema, TableInterface, Query } from 'asasvirtuais/interface'
+
+const operators = ['$ne', '$in', '$nin', '$lt', '$lte', '$gt', '$gte'] as const
+
+/**
+ * Whether a record matches a query: field matches, `$ne $lt $lte $gt $gte $in $nin`, and nested `$or` / `$and`.
+ */
+export function matches(item: Record<string, any>, query: Query<any> = {}): boolean {
+    return Object.entries(query).every(([key, value]) => {
+        if (key === '$or') return (value as Query<any>[]).some(sub => matches(item, sub))
+        if (key === '$and') return (value as Query<any>[]).every(sub => matches(item, sub))
+        if (key.startsWith('$')) return true // $limit, $skip, $sort and $select are not filters
+        const itemValue = item[key]
+        if (value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).some(op => (operators as readonly string[]).includes(op))) {
+            return Object.entries(value).every(([op, opValue]) => {
+                switch (op) {
+                    case '$ne': return itemValue !== opValue
+                    case '$in': return Array.isArray(opValue) && opValue.includes(itemValue)
+                    case '$nin': return Array.isArray(opValue) && !opValue.includes(itemValue)
+                    case '$lt': return itemValue < (opValue as any)
+                    case '$lte': return itemValue <= (opValue as any)
+                    case '$gt': return itemValue > (opValue as any)
+                    case '$gte': return itemValue >= (opValue as any)
+                    default: return true
+                }
+            })
+        }
+        return itemValue === value
+    })
+}
 
 /**
  * Creates a TableInterface adapter for IndexedDB using Dexie.js.
@@ -8,29 +37,29 @@ import type { DatabaseSchema, TableInterface } from 'asasvirtuais/interface'
  *
  * @param dbName The name of the IndexedDB database.
  * @param schema The Zod schema definition for the database tables.
+ * @param version The Dexie schema version. Bump it when the tables or their fields change.
  * @returns A TableInterface implementation for Dexie.
  */
 export function indexedInterface<Schema extends DatabaseSchema>(
     dbName: string,
-    schema: Schema
+    schema: Schema,
+    version = 1,
 ): TableInterface<z.infer<Schema[keyof Schema]['readable']>, z.infer<Schema[keyof Schema]['writable']>> {
 
     const db = new Dexie(dbName)
 
-
     // Dynamically define the database schema for Dexie from the Zod schema.
     // It marks 'id' as the primary key and indexes all other top-level readable fields.
+    // Values that aren't valid IndexedDB keys (objects, booleans) are simply left out of their index.
     const dexieSchema = Object.fromEntries(
         Object.keys(schema).map(tableName => {
             const fields = Object.keys(schema[tableName].readable.shape)
-            // 'id' is the primary key, the rest are indexed fields.
             const indexedFields = fields.filter(f => f !== 'id').join(', ')
-            return [tableName, `id, ${indexedFields}`]
+            return [tableName, indexedFields ? `id, ${indexedFields}` : 'id']
         })
     )
 
-    db.version(1).stores(dexieSchema)
-
+    db.version(version).stores(dexieSchema)
 
     type GenericReadable = z.infer<Schema[keyof Schema]['readable']>
     type GenericWritable = z.infer<Schema[keyof Schema]['writable']>
@@ -45,54 +74,25 @@ export function indexedInterface<Schema extends DatabaseSchema>(
 
         async list({ table, query }) {
             if (!table) throw new Error('Table name must be provided.')
-            let collection = db.table(table).toCollection()
+            const { $limit, $skip, $sort, $select } = query ?? {}
 
-            const { $limit, $skip, $sort, ...filters } = query ?? {}
+            let rows: Record<string, any>[] = await db.table(table).filter(item => matches(item, query)).toArray()
 
-            // Handle filtering
-            if (Object.keys(filters).length > 0) {
-                collection = collection.filter(item => {
-                    return Object.entries(filters).every(([key, value]) => {
-                        const itemValue = item[key as keyof typeof item]
-                        if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
-                            return Object.entries(value).every(([op, opValue]) => {
-                                switch (op) {
-                                    case '$ne': return itemValue !== opValue
-                                    case '$in': return Array.isArray(opValue) && opValue.includes(itemValue)
-                                    case '$nin': return Array.isArray(opValue) && !opValue.includes(itemValue)
-                                    case '$lt': return itemValue < (opValue as number)
-                                    case '$lte': return itemValue <= (opValue as number)
-                                    case '$gt': return itemValue > (opValue as number)
-                                    case '$gte': return itemValue >= (opValue as number)
-                                    default: return true // Ignore unknown operators
-                                }
-                            })
-                        } else {
-                            return itemValue === value
-                        }
-                    })
+            if ($sort) {
+                const keys = Object.entries($sort) as [string, 1 | -1][]
+                rows.sort((a, b) => {
+                    for (const [key, direction] of keys) {
+                        if (a[key] < b[key]) return -direction
+                        if (a[key] > b[key]) return direction
+                    }
+                    return 0
                 })
             }
+            if ($skip) rows = rows.slice($skip)
+            if ($limit) rows = rows.slice(0, $limit)
+            if ($select) rows = rows.map(row => Object.fromEntries(['id', ...$select as string[]].map(key => [key, row[key]])))
 
-            // Handle sorting
-            if ($sort) {
-                const sortKey = Object.keys($sort)[0] as keyof GenericReadable
-                const direction = $sort[sortKey] === -1 ? 'desc' : 'asc'
-                if (direction === 'desc')
-                    collection = collection.reverse()
-                // @ts-expect-error
-                collection = await collection.sortBy(sortKey)
-            }
-
-            // Handle pagination
-            if ($skip) {
-                collection = collection.offset($skip)
-            }
-            if ($limit) {
-                collection = collection.limit($limit)
-            }
-
-            return collection.toArray()
+            return rows as GenericReadable[]
         },
 
         async create({ table, data }) {
@@ -106,9 +106,10 @@ export function indexedInterface<Schema extends DatabaseSchema>(
 
         async update({ table, id, data }) {
             if (!table) throw new Error('Table name must be provided.')
-            const updatedCount = await db.table(table).update(id, data)
+            const updatedCount = await db.table(table).update(id, data as any)
             if (updatedCount === 0) {
-                throw new Error(`Record with id ${id} not found in ${table}, cannot update.`)
+                // Dexie reports 0 both for a missing record and for an update that changes nothing.
+                await methods.find({ table, id })
             }
             const result = await methods.find({ table, id })
             return result as GenericReadable
@@ -117,9 +118,6 @@ export function indexedInterface<Schema extends DatabaseSchema>(
         async remove({ table, id }) {
             if (!table) throw new Error('Table name must be provided.')
             const record = await methods.find({ table, id })
-            if (!record) {
-                throw new Error(`Record with id ${id} not found in ${table}, cannot remove.`)
-            }
             await db.table(table).delete(id)
             return record as GenericReadable
         },

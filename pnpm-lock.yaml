@@ -9,19 +9,23 @@ importers:
   .:
     dependencies:
       asasvirtuais:
-        specifier: ^4.0.1
-        version: 4.0.1(react@19.2.5)
+        specifier: ^5.1.2
+        version: 5.1.2(react@19.2.5)
       dexie:
         specifier: ^4.4.2
         version: 4.4.2
+    devDependencies:
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
       zod:
-        specifier: ^4.3.6
-        version: 4.3.6
+        specifier: ^4.6.5
+        version: 4.6.7
 
 packages:
 
-  asasvirtuais@4.0.1:
-    resolution: {integrity: sha512-9pqyy5UdLaRugI3tREypm96+DemUqkpoBGqhNxOZ7iaOf6+TKK5TZFB/B4XWcm28sKFRetMPaMflkhNn4FYSHQ==}
+  asasvirtuais@5.1.2:
+    resolution: {integrity: sha512-NFvSK3VW84jcHo1/5Jwq0lCyUa90fYH5et8bmDZYTzq8jmRGrE+1bcAbqn6Xb8me48TBjE3u2bHqX+Zh+8ohdw==}
     peerDependencies:
       react: ^19.2.4
 
@@ -32,18 +36,25 @@ packages:
     resolution: {integrity: sha512-llUJLzz1zTUBrskt2pwZgLq59AemifIftw4aB7JxOqf1HY2FDaGDxgwpAPVzHU1kdWabH7FauP4i1oEeer2WCA==}
     engines: {node: '>=0.10.0'}
 
-  zod@4.3.6:
-    resolution: {integrity: sha512-rftlrkhHZOcjDwkGlnUtZZkvaPHCsDATp4pGpuOOMDaTdDDXF91wuVDJoWoPsKX/3YPQ5fHuF3STjcYyKr+Qhg==}
+  typescript@5.9.3:
+    resolution: {integrity: sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==}
+    engines: {node: '>=14.17'}
+    hasBin: true
+
+  zod@4.6.7:
+    resolution: {integrity: sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg==}
 
 snapshots:
 
-  asasvirtuais@4.0.1(react@19.2.5):
+  asasvirtuais@5.1.2(react@19.2.5):
     dependencies:
       react: 19.2.5
-      zod: 4.3.6
+      zod: 4.6.7
 
   dexie@4.4.2: {}
 
   react@19.2.5: {}
 
-  zod@4.3.6: {}
+  typescript@5.9.3: {}
+
+  zod@4.6.7: {}
